@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>水電 & CCTV 工程管理系統 (Firebase Sync)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- html2pdf.js for PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <!-- Firebase SDK (v9 Moduler Compat for Browser) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white !important; font-size: 12pt; }
+            .page-break { page-break-after: always; }
+        }
+        .print-only { display: none; }
+        .a4-page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 15mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        @media (max-width: 768px) {
+            .a4-page {
+                width: 100%;
+                min-height: auto;
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen pb-12">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-50 no-print">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-faucet-drip text-blue-400 text-2xl"></i>
+                <h1 class="text-xl font-bold tracking-wide">水電 & CCTV 工程管理系統</h1>
+                <span class="bg-blue-600 text-xs px-2 py-0.5 rounded text-white font-medium">MYR</span>
+            </div>
+
+            <!-- Operational User Switcher & Cloud Status -->
+            <div class="flex items-center space-x-4">
+                <div id="sync-status" class="flex items-center space-x-1.5 text-xs text-emerald-400 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
+                    <span id="sync-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="sync-status-text">雲端同步中</span>
+                </div>
+
+                <div class="flex items-center space-x-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+                    <i class="fa-solid fa-user-gear text-slate-400"></i>
+                    <span class="text-xs text-slate-400 hidden sm:inline">目前操作員:</span>
+                    <select id="user-selector" onchange="changeCurrentUser(this.value)" class="bg-slate-900 text-white text-sm font-semibold focus:outline-none cursor-pointer border-none py-0">
+                        <option value="1) EDWARD">1) EDWARD</option>
+                        <option value="2) YIN">2) YIN</option>
+                        <option value="3) BACKOFFICE">3) BACKOFFICE</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- App Main Tabs -->
+        <div class="bg-slate-800 border-t border-slate-700">
+            <div class="max-w-7xl mx-auto px-4 flex space-x-2 overflow-x-auto py-2 text-sm">
+                <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" class="tab-btn active px-4 py-2 rounded-lg font-medium transition flex items-center space-x-2 bg-blue-600 text-white">
+                    <i class="fa-solid fa-chart-line"></i><span>儀表板 & 概覽</span>
+                </button>
+                <button onclick="switchTab('documents')" id="tab-btn-documents" class="tab-btn px-4 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-2">
+                    <i class="fa-solid fa-file-invoice-dollar"></i><span>報價單 / 發票列表</span>
+                </button>
+                <button onclick="switchTab('create')" id="tab-btn-create" class="tab-btn px-4 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-2">
+                    <i class="fa-solid fa-circle-plus"></i><span>新建報價單 / 發票</span>
+                </button>
+                <button onclick="switchTab('services')" id="tab-btn-services" class="tab-btn px-4 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-2">
+                    <i class="fa-solid fa-list-check"></i><span>服務項目與單價庫</span>
+                </button>
+                <button onclick="switchTab('customers')" id="tab-btn-customers" class="tab-btn px-4 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-2">
+                    <i class="fa-solid fa-address-book"></i><span>客戶資料庫</span>
+                </button>
+                <button onclick="switchTab('company-settings')" id="tab-btn-company-settings" class="tab-btn px-4 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-2">
+                    <i class="fa-solid fa-building"></i><span>公司資料 & 入賬帳號</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-4 pt-6">
+
+        <!-- TAB 1: Dashboard -->
+        <section id="tab-dashboard" class="tab-content space-y-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs text-slate-500 font-medium uppercase">總單據數</p>
+                            <h3 id="stat-total-docs" class="text-2xl font-bold text-slate-800 mt-1">0</h3>
+                        </div>
+                        <div class="p-3 bg-blue-50 text-blue-600 rounded-lg"><i class="fa-solid fa-folder-open text-xl"></i></div>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs text-slate-500 font-medium uppercase">待處理報價單 (QT)</p>
+                            <h3 id="stat-total-qt" class="text-2xl font-bold text-amber-600 mt-1">0</h3>
+                        </div>
+                        <div class="p-3 bg-amber-50 text-amber-600 rounded-lg"><i class="fa-solid fa-file-signature text-xl"></i></div>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs text-slate-500 font-medium uppercase">工程進行中 發票</p>
+                            <h3 id="stat-in-progress" class="text-2xl font-bold text-indigo-600 mt-1">0</h3>
+                        </div>
+                        <div class="p-3 bg-indigo-50 text-indigo-600 rounded-lg"><i class="fa-solid fa-spinner text-xl"></i></div>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs text-slate-500 font-medium uppercase">已完工 / 結案總額 (MYR)</p>
+                            <h3 id="stat-total-amount" class="text-2xl font-bold text-emerald-600 mt-1">RM 0.00</h3>
+                        </div>
+                        <div class="p-3 bg-emerald-50 text-emerald-600 rounded-lg"><i class="fa-solid fa-sack-dollar text-xl"></i></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Documents Table -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold text-slate-800"><i class="fa-solid fa-clock-rotate-left mr-2 text-blue-600"></i>最新建立單據</h2>
+                    <button onclick="switchTab('create')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded-lg transition flex items-center gap-1">
+                        <i class="fa-solid fa-plus"></i> 新開報價單/發票
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">單號 (Doc No)</th>
+                                <th class="p-3">類型</th>
+                                <th class="p-3">客戶姓名</th>
+                                <th class="p-3">地點</th>
+                                <th class="p-3">開單日期</th>
+                                <th class="p-3">經手人員</th>
+                                <th class="p-3">金額 (MYR)</th>
+                                <th class="p-3">完工進度</th>
+                                <th class="p-3 text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-docs-tbody" class="divide-y divide-slate-100">
+                            <tr><td colspan="9" class="p-4 text-center text-slate-400">目前尚無單據記錄</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: Document Management List -->
+        <section id="tab-documents" class="tab-content hidden space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <h2 class="text-xl font-bold text-slate-800">所有單據清單 (報價單 & 發票)</h2>
+                    <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                        <input type="text" id="search-doc-input" onkeyup="filterDocs()" placeholder="搜尋單號、客戶姓名、電話或地點..." class="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64">
+                        <select id="filter-type-select" onchange="filterDocs()" class="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="ALL">所有類型</option>
+                            <option value="QT">僅報價單 (QT)</option>
+                            <option value="INV">僅發票 (INV)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">單號</th>
+                                <th class="p-3">類型</th>
+                                <th class="p-3">客戶名稱</th>
+                                <th class="p-3">聯絡電話</th>
+                                <th class="p-3">工作地點</th>
+                                <th class="p-3">發單日期</th>
+                                <th class="p-3">有效期 (QT)</th>
+                                <th class="p-3">經手人</th>
+                                <th class="p-3">金額 (MYR)</th>
+                                <th class="p-3">進度 (%)</th>
+                                <th class="p-3 text-center">動作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="all-docs-tbody" class="divide-y divide-slate-100">
+                            <tr><td colspan="11" class="p-4 text-center text-slate-400">資料加載中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: Create / Edit Document -->
+        <section id="tab-create" class="tab-content hidden space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div class="flex justify-between items-center pb-4 mb-6 border-b border-slate-200">
+                    <h2 id="form-title" class="text-xl font-bold text-slate-800"><i class="fa-solid fa-pen-to-square mr-2 text-blue-600"></i>建立新單據</h2>
+                    <button type="button" onclick="showSelectCustomerModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition flex items-center gap-1 shadow-sm">
+                        <i class="fa-solid fa-address-book"></i> 📂 帶入舊客戶資料
+                    </button>
+                </div>
+
+                <form id="doc-form" onsubmit="handleSaveDocument(event)" class="space-y-6">
+                    <input type="hidden" id="editing-doc-id" value="">
+
+                    <!-- Basic Document Config -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">單據類型 *</label>
+                            <select id="doc-type" onchange="toggleDocTypeFields()" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="QT">報價單 (Quotation - QT)</option>
+                                <option value="INV">發票 (Invoice - INV)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">發單日期 *</label>
+                            <input type="date" id="doc-date" onchange="calculateQTValidityDate()" required class="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <!-- QT Specific: Valid Until -->
+                        <div id="qt-validity-box">
+                            <label class="block text-xs font-semibold text-blue-600 mb-1">報價單有效期 (自動+1個月) *</label>
+                            <input type="date" id="doc-valid-until" required class="w-full px-3 py-2 bg-blue-50 border border-blue-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <!-- INV Specific: Completion % -->
+                        <div id="inv-progress-box" class="hidden">
+                            <label class="block text-xs font-semibold text-indigo-600 mb-1">工程完工進度 (%) *</label>
+                            <select id="doc-progress" class="w-full px-3 py-2 bg-indigo-50 border border-indigo-300 rounded-lg text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="0">0% (未開始 / 訂金)</option>
+                                <option value="25">25% (施工初期)</option>
+                                <option value="50">50% (施工過半)</option>
+                                <option value="75">75% (工程後期)</option>
+                                <option value="100" selected>100% (完工結案)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">開單人員 *</label>
+                            <input type="text" id="doc-created-by" readonly class="w-full px-3 py-2 bg-slate-200 border border-slate-300 rounded-lg text-sm font-medium text-slate-700">
+                        </div>
+                    </div>
+
+                    <!-- Customer Info Section -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">客戶姓名 / 公司寶號 *</label>
+                            <input type="text" id="cust-name" required placeholder="例如: Mr. Tan / ABC Shop" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">聯絡電話 (Phone) *</label>
+                            <input type="text" id="cust-phone" required placeholder="例如: 012-3456789" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">工作地點區域 (Location Pull Down) *</label>
+                            <select id="cust-location" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                                <option value="Simpang Renggam">Simpang Renggam</option>
+                                <option value="Renggam">Renggam</option>
+                                <option value="Kluang">Kluang</option>
+                                <option value="Ayer Hitam">Ayer Hitam</option>
+                                <option value="Kulai">Kulai</option>
+                                <option value="Layang">Layang</option>
+                                <option value="Machap">Machap</option>
+                                <option value="Benut">Benut</option>
+                                <option value="Potion">Potion</option>
+                                <option value="Johor Baru">Johor Baru</option>
+                                <option value="其他">其他</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-3">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">詳細施工地址</label>
+                            <input type="text" id="cust-address" placeholder="例如: No. 123, Jalan Main, Taman Security..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <!-- Line Items Section -->
+                    <div class="border-t border-slate-200 pt-6 space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-bold text-slate-800 text-md"><i class="fa-solid fa-list-check mr-2 text-blue-600"></i>服務項目與費用明細</h3>
+                            <div class="flex gap-2">
+                                <button type="button" onclick="showPresetServiceModal()" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs px-3 py-2 rounded-lg font-medium transition flex items-center gap-1">
+                                    <i class="fa-solid fa-book-open"></i> 從水電/CCTV選單快速帶入
+                                </button>
+                                <button type="button" onclick="addBlankLineItem()" class="bg-slate-800 text-white hover:bg-slate-900 text-xs px-3 py-2 rounded-lg font-medium transition flex items-center gap-1">
+                                    <i class="fa-solid fa-plus"></i> 新增空白項目
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Items Table -->
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-slate-100 text-slate-700 font-semibold">
+                                    <tr>
+                                        <th class="p-2.5 w-12">#</th>
+                                        <th class="p-2.5">服務項目 / 描述 (Description)</th>
+                                        <th class="p-2.5 w-24">數量</th>
+                                        <th class="p-2.5 w-32">單價 (MYR)</th>
+                                        <th class="p-2.5 w-32 text-right">小計 (MYR)</th>
+                                        <th class="p-2.5 w-12 text-center">刪</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="line-items-tbody" class="divide-y divide-slate-200">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Total Calculation Footer -->
+                        <div class="flex flex-col items-end pt-4 border-t border-slate-200 space-y-1">
+                            <div class="flex justify-between w-64 text-sm text-slate-600">
+                                <span>項目小計:</span>
+                                <span id="subtotal-display" class="font-mono">MYR 0.00</span>
+                            </div>
+                            <div class="flex justify-between w-64 text-lg font-bold text-slate-900 pt-2 border-t border-slate-300">
+                                <span>總計金額 (MYR):</span>
+                                <span id="grandtotal-display" class="text-blue-600 font-mono">MYR 0.00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Submit Buttons -->
+                    <div class="flex justify-end gap-3 pt-4 border-t border-slate-200">
+                        <button type="button" onclick="switchTab('documents')" class="px-5 py-2.5 rounded-lg border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50 transition">取消</button>
+                        <button type="submit" class="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md transition flex items-center gap-2">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> 儲存並同步至雲端
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- TAB: Services Management -->
+        <section id="tab-services" class="tab-content hidden space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-800"><i class="fa-solid fa-screwdriver-wrench mr-2 text-blue-600"></i>水電 / CCTV 服務項目與價格管理</h2>
+                        <p class="text-xs text-slate-500 mt-1">您在此新增或修改的服務項目與預設單價，會自動連動到開單選擇清單中。</p>
+                    </div>
+                    <button onclick="showAddServiceModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-2.5 rounded-lg font-bold transition flex items-center gap-1 shadow-sm">
+                        <i class="fa-solid fa-plus"></i> 新增自訂服務項目
+                    </button>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-2 mb-4">
+                    <input type="text" id="manage-service-search" onkeyup="renderServiceManagementTable()" placeholder="搜尋服務項目名稱..." class="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full sm:w-64">
+                    <select id="manage-service-cat" onchange="renderServiceManagementTable()" class="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+                        <option value="ALL">所有分類</option>
+                        <option value="水">水 (Tank/水管/馬桶/龍頭)</option>
+                        <option value="風扇">風扇 (天花/掛牆/抽氣)</option>
+                        <option value="電">電 (插座/電箱/拉線)</option>
+                        <option value="電動門">電動門</option>
+                        <option value="保安及防盜">保安及防盜 (CCTV/Alarm)</option>
+                        <option value="燈">燈飾 (Downlight/LED)</option>
+                        <option value="其他">其他</option>
+                    </select>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">#</th>
+                                <th class="p-3">分類</th>
+                                <th class="p-3">服務項目名稱</th>
+                                <th class="p-3">預設單價 (MYR)</th>
+                                <th class="p-3 text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="services-manage-tbody" class="divide-y divide-slate-100">
+                            <!-- Dynamic Content -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 4: Customer Database -->
+        <section id="tab-customers" class="tab-content hidden space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h2 class="text-xl font-bold text-slate-800 mb-4"><i class="fa-solid fa-users mr-2 text-blue-600"></i>客戶歷史檔案庫</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">客戶名稱</th>
+                                <th class="p-3">聯絡電話</th>
+                                <th class="p-3">工作地區</th>
+                                <th class="p-3">地址</th>
+                                <th class="p-3">歷史開單次數</th>
+                                <th class="p-3">累積交易額 (MYR)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="customers-tbody" class="divide-y divide-slate-100">
+                            <!-- Dynamic Content -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 5: Company Settings & Payment Details -->
+        <section id="tab-company-settings" class="tab-content hidden space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 max-w-3xl mx-auto">
+                <h2 class="text-xl font-bold text-slate-800 pb-3 mb-6 border-b border-slate-200">
+                    <i class="fa-solid fa-sliders mr-2 text-blue-600"></i>公司資料與發票銀行入賬設定
+                </h2>
+
+                <form id="company-settings-form" onsubmit="handleSaveCompanySettings(event)" class="space-y-6">
+                    <!-- Logo Upload -->
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-2">公司 Logo / 標誌 (將顯示於 PDF 頂部)</label>
+                        <div class="flex items-center space-x-4">
+                            <div id="logo-preview-box" class="w-24 h-24 border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center bg-slate-50 overflow-hidden">
+                                <span class="text-xs text-slate-400">無 Logo</span>
+                            </div>
+                            <input type="file" id="company-logo-input" accept="image/*" onchange="previewLogoUpload(event)" class="text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">公司中文名稱 *</label>
+                            <input type="text" id="set-company-name" required placeholder="水電 & CCTV
