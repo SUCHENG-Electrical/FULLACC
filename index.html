@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>水電 & CCTV 工程管理系統 (Firebase Sync)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- html2pdf.js for PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <!-- Firebase SDK (v9 Modular Compat for Browser) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white !important; font-size: 11pt; }
+            .a4-page { box-shadow: none !important; margin: 0 !important; width: 100% !important; }
+        }
+        .print-only { display: none; }
+        .a4-page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 15mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        @media (max-width: 768px) {
+            .a4-page { width: 100%; min-height: auto; padding: 10px; }
+            .responsive-table thead { display: none; }
+            .responsive-table tr { 
+                display: block; margin-bottom: 0.75rem; background: #ffffff; 
+                border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 0.75rem;
+                box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            }
+            .responsive-table td { 
+                display: flex; justify-content: space-between; align-items: center; 
+                padding: 0.375rem 0; border-bottom: 1px dashed #f1f5f9; 
+            }
+            .responsive-table td:last-child { border-bottom: none; }
+            .responsive-table td::before { 
+                content: attr(data-label); font-weight: 600; color: #64748b; font-size: 0.75rem; 
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen pb-12">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-50 no-print">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-2">
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-faucet-drip text-blue-400 text-xl"></i>
+                <h1 class="text-base sm:text-xl font-bold tracking-wide">水電 & CCTV 工程管理</h1>
+                <span class="bg-blue-600 text-[10px] sm:text-xs px-2 py-0.5 rounded text-white font-medium">MYR</span>
+            </div>
+
+            <div class="flex items-center space-x-2 sm:space-x-4">
+                <div id="sync-status" class="flex items-center space-x-1 text-[11px] sm:text-xs text-emerald-400 bg-slate-800 px-2.5 py-1 rounded-full border border-slate-700">
+                    <span id="sync-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="sync-status-text">雲端同步</span>
+                </div>
+
+                <div class="flex items-center space-x-1 bg-slate-800 px-2 py-1 rounded-lg border border-slate-700">
+                    <i class="fa-solid fa-user-gear text-slate-400 text-xs"></i>
+                    <select id="user-selector" class="bg-slate-900 text-white text-xs sm:text-sm font-semibold focus:outline-none cursor-pointer border-none py-0">
+                        <option value="1) EDWARD">1) EDWARD</option>
+                        <option value="2) YIN">2) YIN</option>
+                        <option value="3) BACKOFFICE">3) BACKOFFICE</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-slate-800 border-t border-slate-700">
+            <div class="max-w-7xl mx-auto px-2 flex space-x-1.5 overflow-x-auto py-2 text-xs sm:text-sm whitespace-nowrap">
+                <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" class="tab-btn active px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5 bg-blue-600 text-white">
+                    <i class="fa-solid fa-chart-line"></i><span>概覽</span>
+                </button>
+                <button onclick="switchTab('documents')" id="tab-btn-documents" class="tab-btn px-3 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-file-invoice-dollar"></i><span>單據列表</span>
+                </button>
+                <button onclick="switchTab('create')" id="tab-btn-create" class="tab-btn px-3 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-circle-plus"></i><span>新建開單</span>
+                </button>
+                <button onclick="switchTab('expenses')" id="tab-btn-expenses" class="tab-btn px-3 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-calculator"></i><span>支出紀錄</span>
+                </button>
+                <button onclick="switchTab('income')" id="tab-btn-income" class="tab-btn px-3 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-hand-holding-dollar"></i><span>收入紀錄</span>
+                </button>
+                <button onclick="switchTab('services')" id="tab-btn-services" class="tab-btn px-3 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-list-check"></i><span>服務項目庫</span>
+                </button>
+                <button onclick="switchTab('customers')" id="tab-btn-customers" class="tab-btn px-3 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-address-book"></i><span>客戶資料庫</span>
+                </button>
+                <button onclick="switchTab('company-settings')" id="tab-btn-company-settings" class="tab-btn px-3 py-2 rounded-lg font-medium transition text-slate-300 hover:bg-slate-700 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-building"></i><span>公司與發票設定</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6">
+
+        <!-- TAB 1: Dashboard -->
+        <section id="tab-dashboard" class="tab-content space-y-4 sm:space-y-6">
+            <div class="bg-white p-3.5 sm:p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-filter text-blue-600"></i>
+                    <span class="text-xs sm:text-sm font-bold text-slate-800">概覽視角與工程篩選 (Pull-Down Menu)：</span>
+                </div>
+                <div class="flex flex-wrap gap-2 items-center w-full sm:w-auto">
+                    <select id="dashboard-project-filter" onchange="renderDashboard()" class="px-3 py-1.5 bg-blue-50 border border-blue-300 rounded-lg text-xs sm:text-sm font-bold text-blue-900 focus:outline-none flex-1 sm:w-64">
+                        <option value="ALL">全部工程 (All Invoices)</option>
+                    </select>
+                    <select id="dashboard-month-selector" onchange="renderDashboard()" class="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs sm:text-sm font-bold text-slate-800 focus:outline-none">
+                        <option value="ALL">全部月份總計</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+                <div class="bg-white p-3.5 sm:p-5 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase">總單據數</p>
+                    <h3 id="stat-total-docs" class="text-lg sm:text-2xl font-bold text-slate-800 mt-1">0</h3>
+                </div>
+                <div class="bg-white p-3.5 sm:p-5 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase">待處理報價 (QT)</p>
+                    <h3 id="stat-total-qt" class="text-lg sm:text-2xl font-bold text-amber-600 mt-1">0</h3>
+                </div>
+                <div class="bg-white p-3.5 sm:p-5 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase">進行中發票</p>
+                    <h3 id="stat-in-progress" class="text-lg sm:text-2xl font-bold text-indigo-600 mt-1">0</h3>
+                </div>
+                <div class="bg-white p-3.5 sm:p-5 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase">已收帳款總額 (MYR)</p>
+                    <h3 id="stat-total-amount" class="text-base sm:text-2xl font-bold text-emerald-600 mt-1">RM 0</h3>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="bg-amber-50 rounded-xl shadow-sm border border-amber-200 p-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="font-bold text-amber-900 text-sm sm:text-base flex items-center gap-2">
+                            <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>未完工或未收齊款項追蹤
+                        </h3>
+                        <span id="pending-count-badge" class="bg-amber-600 text-white text-xs px-2 py-0.5 rounded-full font-bold">0 筆未結清</span>
+                    </div>
+                    <div id="pending-works-list" class="space-y-1.5 max-h-40 overflow-y-auto text-xs">
+                        <p class="text-amber-600/70 italic">目前所有工程與帳款皆已結清</p>
+                    </div>
+                </div>
+                <div class="bg-blue-50 rounded-xl shadow-sm border border-blue-200 p-4">
+                    <h3 class="font-bold text-blue-900 text-sm sm:text-base flex items-center gap-2 mb-2">
+                        <i class="fa-solid fa-wallet text-blue-600"></i>財務與未收款總覽
+                    </h3>
+                    <div id="monthly-financial-summary" class="text-xs text-blue-800 space-y-1"></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+                <h2 class="text-base sm:text-lg font-bold text-slate-800 mb-4"><i class="fa-solid fa-clock-rotate-left mr-2 text-blue-600"></i>單據紀錄總覽 (點擊 Invoice 可看收支簡表)</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600 responsive-table">
+                        <thead class="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">單號 (Doc No)</th>
+                                <th class="p-3">類型</th>
+                                <th class="p-3">客戶姓名</th>
+                                <th class="p-3">地點</th>
+                                <th class="p-3">開單日期</th>
+                                <th class="p-3">經手人員</th>
+                                <th class="p-3">總金額 / 已收 (MYR)</th>
+                                <th class="p-3">完工進度</th>
+                                <th class="p-3 text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-docs-tbody" class="divide-y divide-slate-100">
+                            <tr><td colspan="9" class="p-4 text-center text-slate-400">目前尚無單據記錄</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: Document Management List -->
+        <section id="tab-documents" class="tab-content hidden space-y-4 sm:space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-base sm:text-xl font-bold text-slate-800">所有單據清單</h2>
+                    <button onclick="exportDocumentsExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-bold transition flex items-center gap-1 shadow-sm">
+                        <i class="fa-solid fa-file-excel"></i> 匯出 Excel
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600 responsive-table">
+                        <thead class="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">單號</th><th class="p-3">類型</th><th class="p-3">客戶名稱</th><th class="p-3">電話</th><th class="p-3">地點</th><th class="p-3">日期</th><th class="p-3">金額</th><th class="p-3 text-center">動作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="all-docs-tbody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: Create / Edit Document -->
+        <section id="tab-create" class="tab-content hidden space-y-4 sm:space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6">
+                <div class="flex flex-wrap justify-between items-center pb-3 mb-4 border-b border-slate-200 gap-2">
+                    <h2 id="form-title" class="text-base sm:text-xl font-bold text-slate-800"><i class="fa-solid fa-pen-to-square mr-1.5 text-blue-600"></i>建立新單據</h2>
+                    <div class="flex gap-2">
+                        <!-- 從現有報價單帶入按鈕 -->
+                        <button type="button" onclick="showSelectQuotationModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-2 rounded-lg font-bold transition flex items-center gap-1 shadow-sm">
+                            <i class="fa-solid fa-file-lines"></i> 📋 從報價單帶入
+                        </button>
+                        <!-- 舊客戶帶入按鈕 -->
+                        <button type="button" onclick="showSelectCustomerModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-bold transition flex items-center gap-1 shadow-sm">
+                            <i class="fa-solid fa-address-book"></i> 📂 舊客戶帶入
+                        </button>
+                    </div>
+                </div>
+
+                <form id="doc-form" onsubmit="handleSaveDocument(event)" class="space-y-4 sm:space-y-6">
+                    <input type="hidden" id="editing-doc-id" value="">
+
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-200">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">單據類型 *</label>
+                            <select id="doc-type" onchange="toggleDocTypeFields()" class="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold">
+                                <option value="QT">報價單 (QT)</option>
+                                <option value="INV">發票 (INV)</option>
+                                <option value="RECEIPT">收據 (RECEIPT)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">發單日期 *</label>
+                            <input type="date" id="doc-date" onchange="calculateQTValidityDate()" required class="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs sm:text-sm">
+                        </div>
+                        <div id="qt-validity-box" class="col-span-1">
+                            <label class="block text-xs font-semibold text-blue-600 mb-1">有效期 (+1個月) *</label>
+                            <input type="date" id="doc-valid-until" required class="w-full px-2.5 py-2 bg-blue-50 border border-blue-300 rounded-lg text-xs sm:text-sm">
+                        </div>
+                        <div id="inv-progress-box" class="col-span-1 hidden">
+                            <label class="block text-xs font-semibold text-indigo-600 mb-1">完工進度 (%) *</label>
+                            <select id="doc-progress" class="w-full px-2.5 py-2 bg-indigo-50 border border-indigo-300 rounded-lg text-xs sm:text-sm font-bold">
+                                <option value="0">0%</option><option value="50">50%</option><option value="100" selected>100% (完工)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">經手人 *</label>
+                            <input type="text" id="doc-created-by" readonly class="w-full px-2.5 py-2 bg-slate-200 border border-slate-300 rounded-lg text-xs sm:text-sm">
+                        </div>
+                    </div>
+
+                    <!-- 收款紀錄 (收據模式) -->
+                    <div id="invoice-payments-section" class="bg-emerald-50 p-3 sm:p-4 rounded-lg border border-emerald-200 space-y-3 hidden">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-bold text-emerald-900 text-xs sm:text-sm"><i class="fa-solid fa-money-bill-wave"></i> 收款紀錄管理</h3>
+                            <button type="button" onclick="addPaymentRecordRow()" class="bg-emerald-600 text-white text-xs px-2.5 py-1 rounded font-bold"><i class="fa-solid fa-plus"></i> 新增收款</button>
+                        </div>
+                        <div id="payment-records-list" class="space-y-2"></div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">客戶姓名 / 公司 *</label>
+                            <input type="text" id="cust-name" required placeholder="例如: Mr. Tan" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">聯絡電話 *</label>
+                            <input type="text" id="cust-phone" required placeholder="012-3456789" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">工作地區 *</label>
+                            <select id="cust-location" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm bg-white font-medium">
+                                <option value="Simpang Renggam">Simpang Renggam</option><option value="Renggam">Renggam</option><option value="Kluang">Kluang</option><option value="Ayer Hitam">Ayer Hitam</option><option value="Kulai">Kulai</option><option value="Layang">Layang</option><option value="Machap">Machap</option><option value="Benut">Benut</option><option value="Potion">Potion</option><option value="Johor Baru">Johor Baru</option><option value="其他">其他</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-3">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">詳細施工地址</label>
+                            <input type="text" id="cust-address" placeholder="No. 123, Jalan Main..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm">
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-200 pt-4 space-y-3">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-bold text-slate-800 text-sm"><i class="fa-solid fa-list-check text-blue-600"></i> 服務項目與明細</h3>
+                            <div class="flex gap-1.5">
+                                <!-- 服務項目庫選單帶入按鈕 -->
+                                <button type="button" onclick="showPresetServiceModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1 shadow-sm">
+                                    <i class="fa-solid fa-book-open"></i> 📚 從服務項目庫帶入
+                                </button>
+                                <button type="button" onclick="addBlankLineItem()" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg font-bold"><i class="fa-solid fa-plus"></i> 空白項目</button>
+                            </div>
+                        </div>
+
+                        <div id="line-items-list" class="space-y-2"></div>
+
+                        <div class="flex justify-end pt-2 text-base font-bold">
+                            <span>總計金額: <span id="grandtotal-display" class="text-blue-600 font-mono">MYR 0.00</span></span>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-2 pt-3 border-t">
+                        <button type="submit" class="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow transition">儲存並同步雲端</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- TAB 4: EXPENSES TAB -->
+        <section id="tab-expenses" class="tab-content hidden space-y-4">
+            <div class="bg-white rounded-xl shadow-sm border p-4 sm:p-6 space-y-4">
+                <div class="flex justify-between items-center pb-3 border-b">
+                    <h2 class="text-base sm:text-xl font-bold text-slate-800"><i class="fa-solid fa-calculator text-blue-600"></i> 支出紀錄 & 兼職薪資</h2>
+                    <input type="month" id="expense-month-picker" onchange="renderExpenseTab()" class="px-3 py-1.5 border rounded text-xs font-bold">
+                </div>
+                <div class="bg-slate-50 p-4 rounded-xl border space-y-3">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-bold text-sm">兼職薪資結算 (最多 5 人)</h3>
+                        <div class="flex gap-2">
+                            <button onclick="addStaffRow()" id="add-staff-btn" class="bg-blue-600 text-white text-xs px-3 py-1 rounded font-bold"><i class="fa-solid fa-user-plus"></i> 新增兼職</button>
+                            <button onclick="saveWagesData()" class="bg-emerald-600 text-white text-xs px-3 py-1 rounded font-bold">儲存</button>
+                        </div>
+                    </div>
+                    <table class="w-full text-xs responsive-table"><thead class="bg-slate-200"><tr><th>姓名</th><th>日薪</th><th>天數</th><th>借糧</th><th class="text-right">實付 / 操作</th></tr></thead><tbody id="wages-rows-container" class="bg-white"></tbody></table>
+                </div>
+                <div class="bg-slate-50 p-4 rounded-xl border space-y-3">
+                    <div class="flex justify-between items-center"><h3 class="font-bold text-sm">材料採購支出</h3><button onclick="showAddItemModal()" class="bg-blue-600 text-white text-xs px-3 py-1 rounded font-bold">新增採購</button></div>
+                    <table class="w-full text-xs responsive-table"><thead class="bg-slate-200"><tr><th>日期</th><th>發票</th><th>物品</th><th>數量</th><th>金額</th><th>操作</th></tr></thead><tbody id="items-expense-tbody" class="bg-white"></tbody></table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 5: INCOME TAB -->
+        <section id="tab-income" class="tab-content hidden space-y-4">
+            <div class="bg-white rounded-xl shadow-sm border p-4 sm:p-6 space-y-4">
+                <div class="flex justify-between items-center pb-3 border-b">
+                    <h2 class="text-base sm:text-xl font-bold text-slate-800"><i class="fa-solid fa-hand-holding-dollar text-emerald-600"></i> 收入紀錄</h2>
+                    <button onclick="exportIncomeExcel()" class="bg-emerald-600 text-white text-xs px-3.5 py-2 rounded-lg font-bold"><i class="fa-solid fa-file-excel"></i> 匯出收入 Excel</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs responsive-table">
+                        <thead class="bg-slate-200 text-slate-700 font-bold">
+                            <tr><th>日期</th><th>單號</th><th>客戶</th><th>金額</th><th>方式</th><th class="w-64">備註</th></tr>
+                        </thead>
+                        <tbody id="income-table-tbody" class="bg-white divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 6: SERVICES MANAGEMENT TAB (服務項目庫管理) -->
+        <section id="tab-services" class="tab-content hidden space-y-4">
+            <div class="bg-white rounded-xl shadow-sm border p-4 sm:p-6 space-y-4">
+                <div class="flex justify-between items-center pb-3 border-b">
+                    <h2 class="text-base sm:text-xl font-bold text-slate-800"><i class="fa-solid fa-screwdriver-wrench text-blue-600"></i> 水電 / CCTV 服務項目庫管理</h2>
+                    <button onclick="showAddServiceModal()" class="bg-blue-600 text-white text-xs px-3.5 py-2 rounded-lg font-bold"><i class="fa-solid fa-plus"></i> 新增服務項目</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm responsive-table">
+                        <thead class="bg-slate-100 font-semibold">
+                            <tr><th>#</th><th>分類</th><th>服務項目名稱</th><th>預設單價 (MYR)</th><th class="text-center">操作</th></tr>
+                        </thead>
+                        <tbody id="services-manage-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 7: CUSTOMER DATABASE TAB (客戶資料庫) -->
+        <section id="tab-customers" class="tab-content hidden space-y-4">
+            <div class="bg-white rounded-xl shadow-sm border p-4 sm:p-6 space-y-4">
+                <div class="flex justify-between items-center pb-3 border-b">
+                    <h2 class="text-base sm:text-xl font-bold text-slate-800"><i class="fa-solid fa-address-book text-blue-600"></i> 客戶歷史檔案庫</h2>
+                    <input type="text" id="search-customer-db" onkeyup="renderCustomersTable()" placeholder="搜尋客戶..." class="px-3 py-1.5 border rounded text-xs w-64">
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm responsive-table">
+                        <thead class="bg-slate-100 font-semibold">
+                            <tr><th>客戶名稱</th><th>聯絡電話</th><th>工作地區</th><th>詳細地址</th><th>歷史開單次數</th><th>累積交易額 (MYR)</th></tr>
+                        </thead>
+                        <tbody id="customers-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 8: COMPANY & INVOICE SETTINGS TAB (公司與發票設定) -->
+        <section id="tab-company-settings" class="tab-content hidden space-y-4">
+            <div class="bg-white rounded-xl shadow-sm border p-4 sm:p-6 max-w-2xl mx-auto space-y-4">
+                <h2 class="text-base sm:text-xl font-bold pb-3 border-b text-slate-800"><i class="fa-solid fa-building text-blue-600 mr-2"></i>公司資料與發票設定</h2>
+                <form onsubmit="handleSaveCompanySettings(event)" class="space-y-3">
+                    <div><label class="block text-xs font-bold mb-1">公司名稱</label><input type="text" id="set-company-name" required class="w-full px-3 py-2 border rounded text-xs"></div>
+                    <div><label class="block text-xs font-bold mb-1">公司電話 (第一行)</label><input type="text" id="set-company-phone" required class="w-full px-3 py-2 border rounded text-xs"></div>
+                    <div><label class="block text-xs font-bold mb-1">公司電話 (第二行)</label><input type="text" id="set-company-phone2" class="w-full px-3 py-2 border rounded text-xs" placeholder="選填第二行電話"></div>
+                    <div><label class="block text-xs font-bold mb-1">公司地址</label><input type="text" id="set-company-address" required class="w-full px-3 py-2 border rounded text-xs"></div>
+                    <div>
+                        <label class="block text-xs font-bold mb-1 text-emerald-700">發票付款 / 入賬資料 (Payment Details 顯示在 PDF 發票底部)</label>
+                        <textarea id="set-payment-details" rows="4" placeholder="Bank: Public Bank Berhad..." class="w-full px-3 py-2 border rounded text-xs font-mono"></textarea>
+                    </div>
+                    <div class="flex justify-end pt-2"><button type="submit" class="bg-blue-600 text-white px-5 py-2 rounded text-xs font-bold shadow">儲存公司與發票設定</button></div>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <!-- 📚 彈窗 1：從服務項目庫帶入 Modal -->
+    <div id="preset-service-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 hidden flex justify-center items-center p-3 no-print">
+        <div class="bg-white rounded-xl max-w-xl w-full p-4 sm:p-6 space-y-3 max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="font-bold text-slate-800 text-base"><i class="fa-solid fa-book-open text-blue-600"></i> 選擇水電 / CCTV 服務項目</h3>
+                <button onclick="closePresetServiceModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <input type="text" id="preset-service-search" onkeyup="renderPresetServiceList()" placeholder="搜尋項目..." class="px-3 py-2 border rounded text-xs">
+            <div id="preset-service-list-container" class="overflow-y-auto flex-1 divide-y border rounded p-2"></div>
+            <div class="flex justify-end pt-2"><button onclick="closePresetServiceModal()" class="px-4 py-1.5 bg-slate-200 text-slate-700 rounded text-xs font-bold">關閉</button></div>
+        </div>
+    </div>
+
+    <!-- 📂 彈窗 2：舊客戶帶入 Modal -->
+    <div id="select-customer-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 hidden flex justify-center items-center p-3 no-print">
+        <div class="bg-white rounded-xl max-w-xl w-full p-4 sm:p-6 space-y-3 max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="font-bold text-slate-800 text-base"><i class="fa-solid fa-address-book text-emerald-600"></i> 選擇舊客戶資料</h3>
+                <button onclick="closeSelectCustomerModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <input type="text" id="modal-cust-search" onkeyup="renderModalCustomerList()" placeholder="搜尋舊客戶..." class="px-3 py-2 border rounded text-xs">
+            <div id="modal-customer-list" class="overflow-y-auto flex-1 divide-y border rounded p-2"></div>
+            <div class="flex justify-end pt-2"><button onclick="closeSelectCustomerModal()" class="px-4 py-1.5 bg-slate-200 text-slate-700 rounded text-xs font-bold">關閉</button></div>
+        </div>
+    </div>
+
+    <!-- 📋 彈窗 3：從現有報價單帶入 Modal -->
+    <div id="select-quotation-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 hidden flex justify-center items-center p-3 no-print">
+        <div class="bg-white rounded-xl max-w-xl w-full p-4 sm:p-6 space-y-3 max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="font-bold text-slate-800 text-base"><i class="fa-solid fa-file-lines text-indigo-600"></i> 選擇現有報價單帶入</h3>
+                <button onclick="closeSelectQuotationModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <input type="text" id="modal-quotation-search" onkeyup="renderModalQuotationList()" placeholder="搜尋報價單編號或客戶..." class="px-3 py-2 border rounded text-xs">
+            <div id="modal-quotation-list" class="overflow-y-auto flex-1 divide-y border rounded p-2"></div>
+            <div class="flex justify-end pt-2"><button onclick="closeSelectQuotationModal()" class="px-4 py-1.5 bg-slate-200 text-slate-700 rounded text-xs font-bold">關閉</button></div>
+        </div>
+    </div>
+
+    <!-- ➕ 彈窗 4：新增/編輯服務項目庫 Modal -->
+    <div id="add-service-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 hidden flex justify-center items-center p-3 no-print">
+        <div class="bg-white rounded-xl max-w-md w-full p-5 space-y-4">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 id="service-modal-title" class="font-bold text-slate-800 text-base">新增服務項目</h3>
+                <button onclick="closeAddServiceModal()" class="text-slate-400"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form onsubmit="handleSaveCustomService(event)" class="space-y-3">
+                <input type="hidden" id="edit-service-index" value="-1">
+                <div>
+                    <label class="block text-xs font-bold mb-1">分類</label>
+                    <select id="new-service-cat" class="w-full px-3 py-2 border rounded text-xs bg-white">
+                        <option value="水">水</option><option value="風扇">風扇</option><option value="電">電</option><option value="電動門">電動門</option><option value="保安及防盜">保安防盜</option><option value="燈">燈飾</option><option value="其他">其他</option>
+                    </select>
+                </div>
+                <div><label class="block text-xs font-bold mb-1">服務項目名稱</label><input type="text" id="new-service-name" required class="w-full px-3 py-2 border rounded text-xs"></div>
+                <div><label class="block text-xs font-bold mb-1">預設單價 (MYR)</label><input type="number" step="0.01" id="new-service-price" required value="0" class="w-full px-3 py-2 border rounded text-xs font-mono"></div>
+                <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeAddServiceModal()" class="px-3 py-1 bg-slate-200 rounded text-xs">取消</button><button type="submit" class="px-4 py-1 bg-blue-600 text-white rounded text-xs font-bold">儲存</button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 🔍 彈窗 5：Invoice 財務收支簡表 Modal -->
+    <div id="invoice-summary-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 hidden flex justify-center items-center p-3 no-print">
+        <div class="bg-white rounded-xl max-w-2xl w-full p-4 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-3">
+                <div>
+                    <h3 class="font-extrabold text-slate-900 text-base sm:text-lg">工程收支簡表: <span id="summary-inv-id" class="text-blue-600 font-mono"></span></h3>
+                    <p class="text-xs text-slate-500" id="summary-cust-info"></p>
+                </div>
+                <button onclick="closeInvoiceSummaryModal()" class="text-slate-400"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="bg-emerald-50 p-3.5 rounded-lg border border-emerald-200 space-y-2">
+                <div class="flex justify-between items-center"><h4 class="font-bold text-emerald-900 text-xs">A：本工程收款紀錄 (總收入)</h4><span id="summary-total-income" class="font-mono font-bold text-emerald-700">RM 0.00</span></div>
+                <div id="summary-income-list" class="space-y-1 text-xs font-mono text-emerald-800"></div>
+            </div>
+            <div class="bg-amber-50 p-3.5 rounded-lg border border-amber-200 space-y-2">
+                <div class="flex justify-between items-center"><h4 class="font-bold text-amber-900 text-xs">B：材料與物品採購紀錄 (總支出)</h4><span id="summary-total-expense" class="font-mono font-bold text-amber-700">RM 0.00</span></div>
+                <div id="summary-expense-list" class="space-y-1 text-xs text-amber-900"></div>
+            </div>
+            <div class="bg-slate-100 p-3 rounded-lg border flex justify-between items-center font-bold text-xs sm:text-sm">
+                <span>工程淨結算 (總收入 - 採購支出):</span>
+                <span id="summary-net-profit" class="font-mono text-base text-blue-700">RM 0.00</span>
+            </div>
+            <div class="flex justify-end pt-2"><button onclick="closeInvoiceSummaryModal()" class="px-4 py-1.5 bg-slate-800 text-white rounded text-xs font-bold">關閉</button></div>
+        </div>
+    </div>
+
+    <!-- 📄 PDF Modal (含中英文切換與轉成 RECEIPT 按鈕) -->
+    <div id="pdf-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 hidden flex justify-center items-start overflow-y-auto p-2 sm:p-6 no-print">
+        <div class="bg-slate-800 rounded-xl w-full max-w-4xl p-3 space-y-3">
+            <div class="flex flex-wrap justify-between items-center border-b border-slate-700 pb-2 gap-2">
+                <div class="flex items-center space-x-2">
+                    <span class="text-white font-bold text-sm">PDF 預覽與版本控制</span>
+                    <button onclick="togglePdfLanguage()" id="pdf-lang-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-xs font-bold"><i class="fa-solid fa-language"></i> 切換英文版 (EN)</button>
+                    <button onclick="togglePdfDocType()" id="pdf-type-btn" class="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded text-xs font-bold"><i class="fa-solid fa-receipt"></i> 轉成 RECEIPT</button>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="downloadPDF()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs font-bold"><i class="fa-solid fa-download"></i> 下載 PDF</button>
+                    <button onclick="closePdfModal()" class="bg-slate-700 text-slate-300 px-3 py-1 rounded text-xs">關閉</button>
+                </div>
+            </div>
+            <div class="bg-slate-200 p-4 rounded-lg flex justify-center overflow-x-auto"><div id="pdf-render-area" class="a4-page font-sans text-slate-800 text-sm"></div></div>
+        </div>
+    </div>
+
+    <!-- JavaScript Core Script -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyA_h-lxEGUzlzbyR7k0-Kh8gr9EOyc1QEE",
+            authDomain: "sucheng-8d2e4.firebaseapp.com",
+            projectId: "sucheng-8d2e4",
+            storageBucket: "sucheng-8d2e4.firebasestorage.app",
+            messagingSenderId: "879154121428",
+            appId: "1:879154121428:web:eccdcce7eabc5234348941"
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let documentsStore = [];
+        let customServicesStore = [];
+        let itemExpensesStore = [];
+        let wagesStore = {};
+        let incomeNotesStore = {};
+        let currentPdfDocId = null;
+        let pdfLangIsEnglish = false;
+        let pdfTypeAsReceipt = false;
+
+        let companyConfig = {
+            name: "水電 & CCTV 工程服務有限公司",
+            phone: "+60 12-345 6789",
+            phone2: "",
+            address: "No. 123, Jalan Service, Kluang, Johor",
+            paymentDetails: "Bank: Public Bank Berhad\nAccount No: 3123-4567-89"
+        };
+
+        const DEFAULT_PRESET_SERVICES = [
+            { cat: "水", name: "水缸(Tank) - 檢查/清洗", price: 150 },
+            { cat: "水", name: "水缸(Tank) - 水球更換", price: 80 },
+            { cat: "水", name: "水管 - 維修漏水", price: 120 },
+            { cat: "電", name: "插座 13A - 安裝/更換", price: 60 },
+            { cat: "電", name: "插座 13A (防水) - 安裝/更換", price: 90 },
+            { cat: "保安及防盜", name: "UNV IP 2MP Camera 4CH / 8MP 2TB HDD", price: 1200 },
+            { cat: "燈", name: "LED 吸頂燈安裝", price: 50 },
+            { cat: "電動門", name: "自動門馬達修理/更換", price: 350 }
+        ];
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const todayYM = new Date().toISOString().substring(0, 7);
+            const picker = document.getElementById('expense-month-picker');
+            if(picker) picker.value = todayYM;
+            setDefaultDates();
+            setupFirebaseRealtimeListeners();
+            addBlankLineItem();
+            addPaymentRecordRow();
+        });
+
+        function setupFirebaseRealtimeListeners() {
+            db.collection('documents').onSnapshot((snapshot) => {
+                documentsStore = [];
+                snapshot.forEach(doc => documentsStore.push(doc.data()));
+                documentsStore.sort((a, b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date));
+                populateMonthAndProjectSelectors();
+                renderDashboard();
+                renderAllDocsTable();
+                renderCustomersTable();
+                if(!document.getElementById('tab-income').classList.contains('hidden')) renderIncomeTable();
+                document.getElementById('sync-status-text').innerText = "雲端即時連線";
+            });
+
+            db.collection('settings').doc('services').onSnapshot(doc => {
+                if(doc.exists && doc.data().list) {
+                    customServicesStore = doc.data().list;
+                } else {
+                    customServicesStore = [...DEFAULT_PRESET_SERVICES];
+                    db.collection('settings').doc('services').set({ list: customServicesStore });
+                }
+                renderServiceManagementTable();
+            });
+
+            db.collection('settings').doc('company').onSnapshot(doc => {
+                if(doc.exists) companyConfig = doc.data();
+                populateCompanySettingsForm();
+            });
+
+            db.collection('expenses_items').onSnapshot(snapshot => {
+                itemExpensesStore = [];
+                snapshot.forEach(doc => itemExpensesStore.push({ id: doc.id, ...doc.data() }));
+                if(!document.getElementById('tab-expenses').classList.contains('hidden')) renderExpenseTab();
+            });
+
+            db.collection('expenses_wages').onSnapshot(snapshot => {
+                wagesStore = {};
+                snapshot.forEach(doc => wagesStore[doc.id] = doc.data().staff || []);
+                if(!document.getElementById('tab-expenses').classList.contains('hidden')) renderExpenseTab();
+            });
+
+            db.collection('settings').doc('income_notes').onSnapshot(doc => {
+                incomeNotesStore = doc.exists ? doc.data() : {};
+                if(!document.getElementById('tab-income').classList.contains('hidden')) renderIncomeTable();
+            });
+        }
+
+        // --- 📚 服務項目庫相關函數 ---
+        function showPresetServiceModal() {
+            renderPresetServiceList();
+            document.getElementById('preset-service-modal').classList.remove('hidden');
+        }
+        function closePresetServiceModal() { document.getElementById('preset-service-modal').classList.add('hidden'); }
+
+        function renderPresetServiceList() {
+            const search = document.getElementById('preset-service-search').value.toLowerCase();
+            const container = document.getElementById('preset-service-list-container');
+            const list = customServicesStore.filter(s => s.name.toLowerCase().includes(search) || s.cat.toLowerCase().includes(search));
+            if(list.length === 0) { container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">查無服務項目</div>`; return; }
+            container.innerHTML = list.map(s => `
+                <div class="p-2.5 hover:bg-slate-50 flex justify-between items-center text-xs">
+                    <div><span class="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold rounded mr-2">${s.cat}</span><strong>${s.name}</strong> <span class="text-slate-500 font-mono ml-2">RM ${s.price.toFixed(2)}</span></div>
+                    <button type="button" onclick="addBlankLineItem('${s.name.replace(/'/g, "\\'")}', 1, ${s.price}); closePresetServiceModal();" class="bg-blue-600 text-white px-2.5 py-1 rounded font-bold">帶入</button>
+                </div>
+            `).join('');
+        }
+
+        function showAddServiceModal(index = -1) {
+            document.getElementById('edit-service-index').value = index;
+            if(index >= 0) {
+                const s = customServicesStore[index];
+                document.getElementById('service-modal-title').innerText = "編輯服務項目";
+                document.getElementById('new-service-cat').value = s.cat;
+                document.getElementById('new-service-name').value = s.name;
+                document.getElementById('new-service-price').value = s.price;
+            } else {
+                document.getElementById('service-modal-title').innerText = "新增服務項目";
+                document.getElementById('new-service-cat').value = "水";
+                document.getElementById('new-service-name').value = "";
+                document.getElementById('new-service-price').value = "0";
+            }
+            document.getElementById('add-service-modal').classList.remove('hidden');
+        }
+        function closeAddServiceModal() { document.getElementById('add-service-modal').classList.add('hidden'); }
+
+        function handleSaveCustomService(e) {
+            e.preventDefault();
+            const index = parseInt(document.getElementById('edit-service-index').value);
+            const cat = document.getElementById('new-service-cat').value;
+            const name = document.getElementById('new-service-name').value.trim();
+            const price = parseFloat(document.getElementById('new-service-price').value) || 0;
+            if(!name) return;
+
+            if(index >= 0) customServicesStore[index] = { cat, name, price };
+            else customServicesStore.push({ cat, name, price });
+
+            db.collection('settings').doc('services').set({ list: customServicesStore }).then(() => {
+                closeAddServiceModal();
+                renderServiceManagementTable();
+                alert('服務項目已儲存！');
+            });
+        }
+
+        function deleteCustomService(idx) {
+            if(confirm('確定要刪除此服務項目嗎？')) {
+                customServicesStore.splice(idx, 1);
+                db.collection('settings').doc('services').set({ list: customServicesStore }).then(() => renderServiceManagementTable());
+            }
+        }
+
+        function renderServiceManagementTable() {
+            const tbody = document.getElementById('services-manage-tbody');
+            if(!tbody) return;
+            if(customServicesStore.length === 0) { tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">尚無服務項目</td></tr>`; return; }
+            tbody.innerHTML = customServicesStore.map((s, idx) => `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-2.5">${idx + 1}</td>
+                    <td class="p-2.5"><span class="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold rounded text-xs">${s.cat}</span></td>
+                    <td class="p-2.5 font-semibold text-slate-800">${s.name}</td>
+                    <td class="p-2.5 font-mono">RM ${s.price.toFixed(2)}</td>
+                    <td class="p-2.5 text-center space-x-2">
+                        <button onclick="showAddServiceModal(${idx})" class="text-amber-600"><i class="fa-solid fa-pen-to-square"></i></button>
+                        <button onclick="deleteCustomService(${idx})" class="text-red-500"><i class="fa-solid fa-trash-can"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // --- 📋 從現有報價單帶入邏輯 ---
+        function showSelectQuotationModal() {
+            renderModalQuotationList();
+            document.getElementById('select-quotation-modal').classList.remove('hidden');
+        }
+        function closeSelectQuotationModal() { document.getElementById('select-quotation-modal').classList.add('hidden'); }
+
+        function renderModalQuotationList() {
+            const search = document.getElementById('modal-quotation-search').value.toLowerCase();
+            const qtList = documentsStore.filter(d => d.type === 'QT' && (d.id.toLowerCase().includes(search) || d.customer.name.toLowerCase().includes(search)));
+            const container = document.getElementById('modal-quotation-list');
+            if(qtList.length === 0) { container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">查無報價單記錄</div>`; return; }
+            container.innerHTML = qtList.map(qt => `
+                <div class="p-2.5 hover:bg-slate-50 flex justify-between items-center text-xs cursor-pointer" onclick="importFromQuotation('${qt.id}')">
+                    <div><strong>[${qt.id}]</strong> ${qt.customer.name} (${qt.customer.phone}) - <span class="text-blue-600 font-mono">RM ${qt.totalAmount.toFixed(2)}</span></div>
+                    <button type="button" class="bg-indigo-600 text-white px-2.5 py-1 rounded font-bold">帶入</button>
+                </div>
+            `).join('');
+        }
+
+        function importFromQuotation(qtId) {
+            const qt = documentsStore.find(d => d.id === qtId);
+            if(!qt) return;
+
+            document.getElementById('cust-name').value = qt.customer.name || '';
+            document.getElementById('cust-phone').value = qt.customer.phone || '';
+            document.getElementById('cust-location').value = qt.customer.location || '';
+            document.getElementById('cust-address').value = qt.customer.address || '';
+
+            const lineContainer = document.getElementById('line-items-list');
+            lineContainer.innerHTML = '';
+            if(qt.items && qt.items.length > 0) {
+                qt.items.forEach(i => addBlankLineItem(i.desc, i.qty, i.price));
+            } else {
+                addBlankLineItem();
+            }
+            recalculateTotals();
+            closeSelectQuotationModal();
+            alert(`已成功從報價單 [${qtId}] 帶入客戶與明細至目前表單！`);
+        }
+
+        // --- 📂 舊客戶帶入與客戶資料庫 ---
+        function showSelectCustomerModal() {
+            renderModalCustomerList();
+            document.getElementById('select-customer-modal').classList.remove('hidden');
+        }
+        function closeSelectCustomerModal() { document.getElementById('select-customer-modal').classList.add('hidden'); }
+
+        function renderModalCustomerList() {
+            const search = document.getElementById('modal-cust-search').value.toLowerCase();
+            const customerMap = {};
+            documentsStore.forEach(d => {
+                const key = `${d.customer.name}-${d.customer.phone}`;
+                customerMap[key] = { name: d.customer.name, phone: d.customer.phone, location: d.customer.location, address: d.customer.address || '' };
+            });
+            const list = Object.values(customerMap).filter(c => c.name.toLowerCase().includes(search) || c.phone.toLowerCase().includes(search));
+            const container = document.getElementById('modal-customer-list');
+            if(list.length === 0) { container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">查無舊客戶記錄</div>`; return; }
+            container.innerHTML = list.map(c => `
+                <div class="p-2.5 hover:bg-slate-50 flex justify-between items-center text-xs cursor-pointer" onclick="selectCustomer('${encodeURIComponent(c.name)}', '${encodeURIComponent(c.phone)}', '${encodeURIComponent(c.location)}', '${encodeURIComponent(c.address)}')">
+                    <div><strong>${c.name}</strong> (${c.phone}) - <span class="text-slate-500">${c.location}</span></div>
+                    <button type="button" class="bg-emerald-600 text-white px-2.5 py-1 rounded font-bold">帶入</button>
+                </div>
+            `).join('');
+        }
+
+        function selectCustomer(name, phone, location, address) {
+            document.getElementById('cust-name').value = decodeURIComponent(name);
+            document.getElementById('cust-phone').value = decodeURIComponent(phone);
+            document.getElementById('cust-location').value = decodeURIComponent(location);
+            document.getElementById('cust-address').value = decodeURIComponent(address);
+            closeSelectCustomerModal();
+        }
+
+        function renderCustomersTable() {
+            const search = document.getElementById('search-customer-db') ? document.getElementById('search-customer-db').value.toLowerCase() : '';
+            const customerMap = {};
+            documentsStore.forEach(d => {
+                const key = `${d.customer.name}-${d.customer.phone}`;
+                if(!customerMap[key]) customerMap[key] = { name: d.customer.name, phone: d.customer.phone, location: d.customer.location, address: d.customer.address || '-', count: 0, totalSpent: 0 };
+                customerMap[key].count += 1;
+                customerMap[key].totalSpent += d.totalAmount;
+            });
+            const tbody = document.getElementById('customers-tbody');
+            if(!tbody) return;
+            const list = Object.values(customerMap).filter(c => c.name.toLowerCase().includes(search) || c.phone.toLowerCase().includes(search));
+            if(list.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">目前尚無客戶檔案</td></tr>`; return; }
+            tbody.innerHTML = list.map(c => `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-2.5 font-bold text-slate-800">${c.name}</td>
+                    <td class="p-2.5 font-mono">${c.phone}</td>
+                    <td class="p-2.5">${c.location}</td>
+                    <td class="p-2.5 text-xs text-slate-500">${c.address}</td>
+                    <td class="p-2.5 font-semibold">${c.count} 次</td>
+                    <td class="p-2.5 font-mono font-bold text-emerald-600">RM ${c.totalSpent.toFixed(2)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // --- 🔍 點擊 INVOICE 查看收支簡表 Modal ---
+        function showInvoiceSummaryModal(invId) {
+            const doc = documentsStore.find(d => d.id === invId);
+            if(!doc) return;
+
+            document.getElementById('summary-inv-id').textContent = doc.id;
+            document.getElementById('summary-cust-info').textContent = `客戶: ${doc.customer.name} (${doc.customer.phone}) | 地點: ${doc.customer.location}`;
+
+            const incomeList = document.getElementById('summary-income-list');
+            let totalIncome = 0;
+            if(doc.payments && doc.payments.length > 0) {
+                incomeList.innerHTML = doc.payments.map(p => {
+                    const amt = p.type === 'percent' ? (doc.totalAmount * (p.value / 100)) : p.value;
+                    totalIncome += amt;
+                    return `<div class="flex justify-between border-b py-1"><span>📅 ${p.date} (${p.method})</span><span class="font-bold">RM ${amt.toFixed(2)}</span></div>`;
+                }).join('');
+            } else {
+                totalIncome = doc.totalCollected || doc.totalAmount;
+                incomeList.innerHTML = `<div class="flex justify-between border-b py-1"><span>📅 ${doc.date} (全額付清)</span><span class="font-bold">RM ${totalIncome.toFixed(2)}</span></div>`;
+            }
+            document.getElementById('summary-total-income').textContent = `RM ${totalIncome.toFixed(2)}`;
+
+            const matchedItems = itemExpensesStore.filter(item => item.invoiceNo === invId);
+            const expenseList = document.getElementById('summary-expense-list');
+            let totalExpense = 0;
+            if(matchedItems.length === 0) {
+                expenseList.innerHTML = `<p class="italic text-slate-400">尚無關聯此單據的材料採購紀錄</p>`;
+            } else {
+                expenseList.innerHTML = matchedItems.map(item => {
+                    const amt = parseFloat(item.totalPrice) || 0;
+                    totalExpense += amt;
+                    return `<div class="flex justify-between border-b py-1"><span>📦 ${item.name} x${item.qty} (${item.date})</span><span class="font-bold">RM ${amt.toFixed(2)}</span></div>`;
+                }).join('');
+            }
+            document.getElementById('summary-total-expense').textContent = `RM ${totalExpense.toFixed(2)}`;
+
+            const net = totalIncome - totalExpense;
+            document.getElementById('summary-net-profit').textContent = `RM ${net.toFixed(2)}`;
+            document.getElementById('invoice-summary-modal').classList.remove('hidden');
+        }
+        function closeInvoiceSummaryModal() { document.getElementById('invoice-summary-modal').classList.add('hidden'); }
+
+        // --- 💰 收入紀錄 Tab 邏輯 ---
+        function getReceiptIncomeRecords() {
+            const list = [];
+            documentsStore.filter(d => d.type === 'INV' || d.type === 'RECEIPT').forEach(doc => {
+                if(doc.payments && doc.payments.length > 0) {
+                    doc.payments.forEach((p, pIdx) => {
+                        const amt = p.type === 'percent' ? (doc.totalAmount * (p.value / 100)) : p.value;
+                        const recordKey = `${doc.id}_${pIdx}`;
+                        list.push({
+                            key: recordKey, invId: doc.id, date: p.date || doc.date,
+                            customerName: doc.customer.name, customerPhone: doc.customer.phone,
+                            amount: amt, method: p.method || 'Online Banking', note: incomeNotesStore[recordKey] || ''
+                        });
+                    });
+                } else if((doc.totalCollected || 0) > 0) {
+                    const recordKey = `${doc.id}_0`;
+                    list.push({
+                        key: recordKey, invId: doc.id, date: doc.date,
+                        customerName: doc.customer.name, customerPhone: doc.customer.phone,
+                        amount: doc.totalCollected || doc.totalAmount, method: '全額款項', note: incomeNotesStore[recordKey] || ''
+                    });
+                }
+            });
+            return list;
+        }
+
+        function renderIncomeTable() {
+            const records = getReceiptIncomeRecords();
+            const tbody = document.getElementById('income-table-tbody');
+            if(!tbody) return;
+            if(records.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">目前尚無收入紀錄</td></tr>`; return; }
+            tbody.innerHTML = records.map(r => `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-2.5 font-mono text-xs">${r.date}</td>
+                    <td class="p-2.5 font-mono font-bold text-blue-600"><button onclick="showInvoiceSummaryModal('${r.invId}')" class="hover:underline">${r.invId}</button></td>
+                    <td class="p-2.5 font-semibold">${r.customerName} (${r.customerPhone})</td>
+                    <td class="p-2.5 font-mono font-bold text-emerald-700">RM ${r.amount.toFixed(2)}</td>
+                    <td class="p-2.5">${r.method}</td>
+                    <td class="p-2.5"><input type="text" value="${r.note}" onchange="saveIncomeNote('${r.key}', this.value)" placeholder="填寫備註..." class="w-full px-2 py-1 border rounded text-xs bg-slate-50"></td>
+                </tr>
+            `).join('');
+        }
+
+        function saveIncomeNote(key, val) {
+            incomeNotesStore[key] = val.trim();
+            db.collection('settings').doc('income_notes').set(incomeNotesStore);
+        }
+
+        function exportIncomeExcel() {
+            const records = getReceiptIncomeRecords();
+            let csv = "\uFEFF收款日期,單號,客戶,金額(MYR),方式,備註\n";
+            records.forEach(r => { csv += `"${r.date}","${r.invId}","${r.customerName}",${r.amount.toFixed(2)},"${r.method}","${r.note}"\n`; });
+            downloadCSV(csv, `Income_${new Date().toISOString().split('T')[0]}.csv`);
+        }
+
+        // --- 概覽頁與選單邏輯 ---
+        function populateMonthAndProjectSelectors() {
+            const pSelector = document.getElementById('dashboard-project-filter');
+            const mSelector = document.getElementById('dashboard-month-selector');
+            if(pSelector) {
+                const invDocs = documentsStore.filter(d => d.type === 'INV' || d.type === 'RECEIPT');
+                pSelector.innerHTML = `<option value="ALL">全部工程 (All Invoices)</option>` + invDocs.map(inv => `<option value="${inv.id}">[${inv.id}] ${inv.customer.name}</option>`).join('');
+            }
+            if(mSelector) {
+                const monthsSet = new Set();
+                documentsStore.forEach(d => { if(d.date) monthsSet.add(d.date.substring(0, 7)); });
+                mSelector.innerHTML = `<option value="ALL">全部月份總計</option>` + Array.from(monthsSet).sort().reverse().map(m => `<option value="${m}">${m} 月份</option>`).join('');
+            }
+        }
+
+        function renderDashboard() {
+            const selectedProject = document.getElementById('dashboard-project-filter') ? document.getElementById('dashboard-project-filter').value : 'ALL';
+            const selectedMonth = document.getElementById('dashboard-month-selector') ? document.getElementById('dashboard-month-selector').value : 'ALL';
+
+            const filteredDocs = documentsStore.filter(d => {
+                const matchProj = selectedProject === 'ALL' || d.id === selectedProject;
+                const matchMonth = selectedMonth === 'ALL' || (d.date && d.date.startsWith(selectedMonth));
+                return matchProj && matchMonth;
+            });
+
+            document.getElementById('stat-total-docs').textContent = filteredDocs.length;
+            document.getElementById('stat-total-qt').textContent = filteredDocs.filter(d => d.type === 'QT').length;
+            document.getElementById('stat-in-progress').textContent = filteredDocs.filter(d => (d.type === 'INV' || d.type === 'RECEIPT') && d.progress < 100).length;
+            document.getElementById('stat-total-amount').textContent = `RM ${filteredDocs.reduce((sum, d) => sum + (d.totalCollected || 0), 0).toFixed(0)}`;
+
+            const unpaidOrIncomplete = filteredDocs.filter(d => (d.type === 'INV' || d.type === 'RECEIPT') && ((d.totalCollected || 0) < d.totalAmount || d.progress < 100));
+            document.getElementById('pending-count-badge').innerText = `${unpaidOrIncomplete.length} 筆未結清`;
+            document.getElementById('pending-works-list').innerHTML = unpaidOrIncomplete.length === 0 ? `<p class="text-emerald-700 italic">目前所有工程與帳款皆已結清！</p>` : unpaidOrIncomplete.map(d => `
+                <div class="flex justify-between items-center bg-white p-2 rounded border border-amber-300">
+                    <button onclick="showInvoiceSummaryModal('${d.id}')" class="font-mono font-bold text-blue-600 hover:underline">${d.id} (${d.customer.name})</button>
+                    <span class="text-red-600 font-bold">欠: RM ${(d.totalAmount - (d.totalCollected||0)).toFixed(2)}</span>
+                </div>
+            `).join('');
+
+            const tbody = document.getElementById('recent-docs-tbody');
+            if(filteredDocs.length === 0) { tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-400">尚無符合條件的單據</td></tr>`; return; }
+            tbody.innerHTML = filteredDocs.map(d => `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-2.5 font-mono font-bold text-blue-600">${d.type!=='QT'?`<button onclick="showInvoiceSummaryModal('${d.id}')" class="hover:underline">${d.id}</button>`:d.id}</td>
+                    <td class="p-2.5"><span class="px-2 py-0.5 rounded text-xs ${d.type==='QT'?'bg-amber-100 text-amber-800':d.type==='RECEIPT'?'bg-emerald-100 text-emerald-800':'bg-indigo-100 text-indigo-800'}">${d.type}</span></td>
+                    <td class="p-2.5 font-bold">${d.customer.name}</td>
+                    <td class="p-2.5">${d.customer.location}</td>
+                    <td class="p-2.5 text-xs">${d.date}</td>
+                    <td class="p-2.5 text-xs">${d.createdBy}</td>
+                    <td class="p-2.5 font-mono text-xs">RM ${d.totalAmount.toFixed(2)}<br><span class="text-emerald-700">(已收:${(d.totalCollected||0).toFixed(2)})</span></td>
+                    <td class="p-2.5">${d.type!=='QT'?d.progress+'%':'-'}</td>
+                    <td class="p-2.5 text-center space-x-1">
+                        <button onclick="previewPDF('${d.id}')" class="text-blue-600 text-xs font-bold"><i class="fa-solid fa-file-pdf"></i> 預覽</button>
+                        <button onclick="editDocument('${d.id}')" class="text-amber-600 text-xs font-bold"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // --- 標準工具與設定函數 ---
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => { el.classList.remove('bg-blue-600', 'text-white'); el.classList.add('text-slate-300'); });
+            document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+            const btn = document.getElementById(`tab-btn-${tabName}`);
+            if(btn) { btn.classList.add('bg-blue-600', 'text-white'); btn.classList.remove('text-slate-300'); }
+
+            if(tabName === 'dashboard') renderDashboard();
+            if(tabName === 'documents') renderAllDocsTable();
+            if(tabName === 'income') renderIncomeTable();
+            if(tabName === 'expenses') renderExpenseTab();
+            if(tabName === 'services') renderServiceManagementTable();
+            if(tabName === 'customers') renderCustomersTable();
+        }
+
+        function setDefaultDates() {
+            const today = new Date().toISOString().split('T')[0];
+            if(document.getElementById('doc-date')) document.getElementById('doc-date').value = today;
+            calculateQTValidityDate();
+            if(document.getElementById('doc-created-by')) document.getElementById('doc-created-by').value = "1) EDWARD";
+        }
+
+        function calculateQTValidityDate() {
+            const val = document.getElementById('doc-date').value;
+            if(!val) return;
+            const d = new Date(val);
+            d.setMonth(d.getMonth() + 1);
+            if(document.getElementById('doc-valid-until')) document.getElementById('doc-valid-until').value = d.toISOString().split('T')[0];
+        }
+
+        function toggleDocTypeFields() {
+            const type = document.getElementById('doc-type').value;
+            document.getElementById('qt-validity-box').classList.toggle('hidden', type !== 'QT');
+            document.getElementById('inv-progress-box').classList.toggle('hidden', type === 'QT');
+            document.getElementById('invoice-payments-section').classList.toggle('hidden', type === 'QT');
+        }
+
+        function addPaymentRecordRow(dateVal = new Date().toISOString().split('T')[0], typeVal = 'percent', valVal = 100) {
+            const list = document.getElementById('payment-records-list');
+            if(!list) return;
+            const div = document.createElement('div');
+            div.className = "payment-row bg-white p-2 rounded border grid grid-cols-12 gap-2 items-center text-xs";
+            div.innerHTML = `
+                <div class="col-span-4"><input type="date" value="${dateVal}" class="pay-date w-full px-2 py-1 border rounded text-xs"></div>
+                <div class="col-span-3"><select class="pay-type w-full px-2 py-1 border rounded text-xs bg-white"><option value="percent" ${typeVal==='percent'?'selected':''}>百分比 (%)</option><option value="amount" ${typeVal==='amount'?'selected':''}>金額</option></select></div>
+                <div class="col-span-4"><input type="number" step="0.01" value="${valVal}" class="pay-val w-full px-2 py-1 border rounded text-xs font-mono"></div>
+                <div class="col-span-1 text-center"><button type="button" onclick="this.closest('.payment-row').remove()" class="text-red-500"><i class="fa-solid fa-trash"></i></button></div>
+            `;
+            list.appendChild(div);
+        }
+
+        function addBlankLineItem(desc = "", qty = 1, price = 0) {
+            const list = document.getElementById('line-items-list');
+            if(!list) return;
+            const div = document.createElement('div');
+            div.className = "item-row bg-slate-50 p-2 rounded border grid grid-cols-12 gap-2 items-center text-xs";
+            div.innerHTML = `
+                <div class="col-span-6"><input type="text" value="${desc}" placeholder="專案或材料描述" class="item-desc w-full px-2 py-1 border rounded text-xs"></div>
+                <div class="col-span-2"><input type="number" value="${qty}" onchange="recalculateTotals()" class="item-qty w-full px-2 py-1 border rounded text-xs font-mono"></div>
+                <div class="col-span-3"><input type="number" step="0.01" value="${price}" onchange="recalculateTotals()" class="item-price w-full px-2 py-1 border rounded text-xs font-mono"></div>
+                <div class="col-span-1 text-center"><button type="button" onclick="this.closest('.item-row').remove(); recalculateTotals();" class="text-red-500"><i class="fa-solid fa-trash"></i></button></div>
+            `;
+            list.appendChild(div);
+            recalculateTotals();
+        }
+
+        function recalculateTotals() {
+            let total = 0;
+            document.querySelectorAll('.item-row').forEach(row => {
+                const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+                const price = parseFloat(row.querySelector('.item-price').value) || 0;
+                total += qty * price;
+            });
+            document.getElementById('grandtotal-display').textContent = `MYR ${total.toFixed(2)}`;
+        }
+
+        function editDocument(id) {
+            const doc = documentsStore.find(d => d.id === id);
+            if(!doc) return;
+
+            switchTab('create');
+            document.getElementById('form-title').innerHTML = `<i class="fa-solid fa-pen-to-square mr-1.5 text-blue-600"></i>編輯單據: ${doc.id}`;
+            document.getElementById('editing-doc-id').value = doc.id;
+            document.getElementById('doc-type').value = doc.type;
+            document.getElementById('doc-date').value = doc.date || '';
+            document.getElementById('doc-valid-until').value = doc.validUntil || '';
+            document.getElementById('doc-progress').value = doc.progress || 100;
+            document.getElementById('doc-created-by').value = doc.createdBy || "1) EDWARD";
+
+            document.getElementById('cust-name').value = doc.customer.name || '';
+            document.getElementById('cust-phone').value = doc.customer.phone || '';
+            document.getElementById('cust-location').value = doc.customer.location || '';
+            document.getElementById('cust-address').value = doc.customer.address || '';
+
+            toggleDocTypeFields();
+
+            const lineContainer = document.getElementById('line-items-list');
+            lineContainer.innerHTML = '';
+            if(doc.items && doc.items.length > 0) {
+                doc.items.forEach(i => addBlankLineItem(i.desc, i.qty, i.price));
+            } else {
+                addBlankLineItem();
+            }
+
+            const payContainer = document.getElementById('payment-records-list');
+            payContainer.innerHTML = '';
+            if(doc.payments && doc.payments.length > 0) {
+                doc.payments.forEach(p => addPaymentRecordRow(p.date, p.type, p.value));
+            } else {
+                addPaymentRecordRow();
+            }
+            recalculateTotals();
+        }
+
+        function handleSaveDocument(e) {
+            e.preventDefault();
+            const docType = document.getElementById('doc-type').value;
+            const items = [];
+            document.querySelectorAll('.item-row').forEach(row => {
+                const desc = row.querySelector('.item-desc').value.trim();
+                const qty = parseFloat(row.querySelector('.item-qty').value) || 1;
+                const price = parseFloat(row.querySelector('.item-price').value) || 0;
+                if(desc) items.push({ desc, qty, price, total: qty * price });
+            });
+
+            const payments = [];
+            document.querySelectorAll('.payment-row').forEach(row => {
+                payments.push({
+                    date: row.querySelector('.pay-date').value,
+                    type: row.querySelector('.pay-type').value,
+                    value: parseFloat(row.querySelector('.pay-val').value) || 0,
+                    method: 'Online Banking'
+                });
+            });
+
+            const docNumber = document.getElementById('editing-doc-id').value || `${docType}-${Date.now().toString().slice(-6)}`;
+            const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+            let totalCollected = 0;
+            payments.forEach(p => { totalCollected += (p.type === 'percent' ? (totalAmount * (p.value / 100)) : p.value); });
+
+            const docData = {
+                id: docNumber, type: docType,
+                date: document.getElementById('doc-date').value,
+                validUntil: document.getElementById('doc-valid-until').value,
+                progress: parseInt(document.getElementById('doc-progress').value) || 100,
+                payments: payments, totalCollected: docType !== 'QT' ? totalCollected : totalAmount,
+                createdBy: document.getElementById('doc-created-by').value,
+                customer: {
+                    name: document.getElementById('cust-name').value.trim(),
+                    phone: document.getElementById('cust-phone').value.trim(),
+                    location: document.getElementById('cust-location').value,
+                    address: document.getElementById('cust-address').value.trim()
+                },
+                items: items, totalAmount: totalAmount, updatedAt: new Date().toISOString()
+            };
+
+            db.collection('documents').doc(docNumber).set(docData).then(() => {
+                alert(`單據 [${docNumber}] 儲存成功！`);
+                document.getElementById('editing-doc-id').value = '';
+                document.getElementById('form-title').innerHTML = `<i class="fa-solid fa-pen-to-square mr-1.5 text-blue-600"></i>建立新單據`;
+                switchTab('documents');
+            });
+        }
+
+        function renderAllDocsTable() {
+            const tbody = document.getElementById('all-docs-tbody');
+            if(!tbody) return;
+            tbody.innerHTML = documentsStore.map(d => `
+                <tr class="hover:bg-slate-50 text-xs">
+                    <td class="p-2.5 font-mono font-bold text-blue-600"><button onclick="showInvoiceSummaryModal('${d.id}')" class="hover:underline">${d.id}</button></td>
+                    <td class="p-2.5">${d.type}</td>
+                    <td class="p-2.5 font-bold">${d.customer.name}</td>
+                    <td class="p-2.5 font-mono">${d.customer.phone}</td>
+                    <td class="p-2.5">${d.customer.location}</td>
+                    <td class="p-2.5">${d.date}</td>
+                    <td class="p-2.5 font-mono font-bold">RM ${d.totalAmount.toFixed(2)}</td>
+                    <td class="p-2.5 text-center space-x-1">
+                        <button onclick="previewPDF('${d.id}')" class="text-blue-600"><i class="fa-solid fa-file-pdf"></i></button>
+                        <button onclick="editDocument('${d.id}')" class="text-amber-600"><i class="fa-solid fa-pen-to-square"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // --- 📄 PDF 預覽與中英文切換、轉成 RECEIPT、雙行電話、日期分兩行、無簽名欄 ---
+        function previewPDF(id) {
+            currentPdfDocId = id;
+            pdfLangIsEnglish = false;
+            const doc = documentsStore.find(d => d.id === id);
+            if(!doc) return;
+            pdfTypeAsReceipt = (doc.type === 'RECEIPT');
+            updatePdfModalUI();
+            document.getElementById('pdf-modal').classList.remove('hidden');
+        }
+
+        function togglePdfLanguage() {
+            pdfLangIsEnglish = !pdfLangIsEnglish;
+            updatePdfModalUI();
+        }
+
+        function togglePdfDocType() {
+            pdfTypeAsReceipt = !pdfTypeAsReceipt;
+            updatePdfModalUI();
+        }
+
+        function updatePdfModalUI() {
+            const doc = documentsStore.find(d => d.id === currentPdfDocId);
+            if(!doc) return;
+
+            const langBtn = document.getElementById('pdf-lang-btn');
+            langBtn.innerHTML = pdfLangIsEnglish ? `<i class="fa-solid fa-language"></i> 切換中文版 (ZH)` : `<i class="fa-solid fa-language"></i> 切換英文版 (EN)`;
+
+            const typeBtn = document.getElementById('pdf-type-btn');
+            typeBtn.innerHTML = pdfTypeAsReceipt ? `<i class="fa-solid fa-receipt"></i> 轉回 INVOICE` : `<i class="fa-solid fa-receipt"></i> 轉成 RECEIPT`;
+
+            const docTitle = pdfTypeAsReceipt ? (pdfLangIsEnglish ? "RECEIPT" : "正式收據") : (pdfLangIsEnglish ? doc.type : (doc.type === 'INV' ? '發票 (INVOICE)' : (doc.type === 'QT' ? '報價單 (QUOTATION)' : '收據 (RECEIPT)')));
+            
+            const lblDate = pdfLangIsEnglish ? "Date:" : "發單日期:";
+            const lblSecondDate = pdfLangIsEnglish ? (pdfTypeAsReceipt ? "Payment Date:" : (doc.type === 'QT' ? "Valid Until:" : "Due Date:")) : (pdfTypeAsReceipt ? "收款日期:" : (doc.type === 'QT' ? "有效期:" : "到期日 / 有效期:"));
+            const secondDateVal = pdfTypeAsReceipt ? doc.date : (doc.type === 'QT' ? doc.validUntil : doc.validUntil);
+
+            const lblNo = pdfLangIsEnglish ? "No:" : "單號:";
+            const lblCust = pdfLangIsEnglish ? "Customer:" : "客戶:";
+            const lblLoc = pdfLangIsEnglish ? "Location:" : "地點:";
+            const lblDesc = pdfLangIsEnglish ? "Description" : "專案或材料描述";
+            const lblQty = pdfLangIsEnglish ? "Qty" : "數量";
+            const lblPrice = pdfLangIsEnglish ? "Subtotal" : "小計";
+            const lblTotal = pdfLangIsEnglish ? "Total:" : "總計:";
+            const lblPayment = pdfLangIsEnglish ? "Payment Details:" : "付款 / 入賬資料:";
+
+            let phonesHtml = `TEL: ${companyConfig.phone}`;
+            if(companyConfig.phone2) phonesHtml += ` / ${companyConfig.phone2}`;
+
+            document.getElementById('pdf-render-area').innerHTML = `
+                <div class="flex justify-between items-start border-b-2 pb-4 mb-4">
+                    <div>
+                        <h1 class="text-xl font-bold">${companyConfig.name}</h1>
+                        <p class="text-xs text-slate-600">${companyConfig.address}</p>
+                        <p class="text-xs text-slate-600">${phonesHtml}</p>
+                    </div>
+                    <div class="text-right">
+                        <h2 class="text-xl font-bold text-blue-600">${docTitle}</h2>
+                        <p class="text-xs font-mono">${lblNo} ${doc.id}</p>
+                        <p class="text-xs font-mono">${lblDate} ${doc.date}</p>
+                        <p class="text-xs font-mono">${lblSecondDate} ${secondDateVal || '-'}</p>
+                    </div>
+                </div>
+                <div class="bg-slate-50 p-3 rounded mb-4 text-xs">
+                    <strong>${lblCust}</strong> ${doc.customer.name} (${doc.customer.phone}) | <strong>${lblLoc}</strong> ${doc.customer.location}
+                </div>
+                <table class="w-full text-left text-xs mb-4">
+                    <thead>
+                        <tr class="bg-slate-800 text-white">
+                            <th class="p-2">${lblDesc}</th>
+                            <th class="p-2 text-center">${lblQty}</th>
+                            <th class="p-2 text-right">${lblPrice}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        ${doc.items.map(i=>`<tr><td class="p-2">${i.desc}</td><td class="p-2 text-center">${i.qty}</td><td class="p-2 text-right font-mono">RM ${(i.qty*i.price).toFixed(2)}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+                <div class="flex justify-between items-start pt-2 border-t">
+                    <div class="text-[11px] font-mono whitespace-pre-line text-slate-700">${lblPayment}\n${companyConfig.paymentDetails}</div>
+                    <div class="text-right font-bold text-base">${lblTotal} MYR ${doc.totalAmount.toFixed(2)}</div>
+                </div>
+            `;
+        }
+
+        function closePdfModal() { document.getElementById('pdf-modal').classList.add('hidden'); }
+        function downloadPDF() { html2pdf().set({ margin: 8, filename: `${currentPdfDocId}.pdf` }).from(document.getElementById('pdf-render-area')).save(); }
+
+        // --- 支出與兼職薪資 (最多5人) ---
+        function renderExpenseTab() {
+            const monthKey = document.getElementById('expense-month-picker').value;
+            const staff = wagesStore[monthKey] || [
+                { name: "同工1", rate: 100, days: 0, advance: 0 },
+                { name: "同工2", rate: 100, days: 0, advance: 0 },
+                { name: "同工3", rate: 100, days: 0, advance: 0 }
+            ];
+
+            const container = document.getElementById('wages-rows-container');
+            container.innerHTML = staff.map((s, idx) => `
+                <tr class="wage-row">
+                    <td class="p-2"><input type="text" value="${s.name}" class="w-full px-2 py-1 border rounded text-xs wage-name font-semibold"></td>
+                    <td class="p-2"><input type="number" value="${s.rate}" class="w-full px-2 py-1 border rounded text-xs wage-rate font-mono"></td>
+                    <td class="p-2"><input type="number" step="0.5" value="${s.days}" class="w-full px-2 py-1 border rounded text-xs wage-days font-mono"></td>
+                    <td class="p-2"><input type="number" value="${s.advance}" class="w-full px-2 py-1 border rounded text-xs wage-advance font-mono text-red-600"></td>
+                    <td class="p-2 text-right font-mono font-bold flex justify-end items-center gap-2">
+                        <span>RM ${((s.rate*s.days)-Math.abs(s.advance)).toFixed(2)}</span>
+                        <button type="button" onclick="removeStaffRow(this)" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+
+            checkStaffCountLimit();
+
+            const filteredItems = itemExpensesStore.filter(i => i.date && i.date.startsWith(monthKey));
+            document.getElementById('items-expense-tbody').innerHTML = filteredItems.length === 0 ? `<tr><td colspan="6" class="p-3 text-center text-slate-400">當月無材料採購</td></tr>` : filteredItems.map(i => `
+                <tr><td class="p-2">${i.date}</td><td class="p-2 font-mono">${i.invoiceNo||'無'}</td><td class="p-2">${i.name}</td><td class="p-2">${i.qty}</td><td class="p-2 font-mono font-bold">RM ${parseFloat(i.totalPrice||0).toFixed(2)}</td><td class="p-2 text-center"><button onclick="db.collection('expenses_items').doc('${i.id}').delete()" class="text-red-500"><i class="fa-solid fa-trash"></i></button></td></tr>
+            `).join('');
+        }
+
+        function addStaffRow() {
+            const container = document.getElementById('wages-rows-container');
+            const rows = container.querySelectorAll('.wage-row');
+            if(rows.length >= 5) {
+                alert('兼職人員最多支援 5 人！');
+                return;
+            }
+            const tr = document.createElement('tr');
+            tr.className = "wage-row";
+            tr.innerHTML = `
+                <td class="p-2"><input type="text" value="同工${rows.length + 1}" class="w-full px-2 py-1 border rounded text-xs wage-name font-semibold"></td>
+                <td class="p-2"><input type="number" value="100" class="w-full px-2 py-1 border rounded text-xs wage-rate font-mono"></td>
+                <td class="p-2"><input type="number" step="0.5" value="0" class="w-full px-2 py-1 border rounded text-xs wage-days font-mono"></td>
+                <td class="p-2"><input type="number" value="0" class="w-full px-2 py-1 border rounded text-xs wage-advance font-mono text-red-600"></td>
+                <td class="p-2 text-right font-mono font-bold flex justify-end items-center gap-2">
+                    <span>RM 0.00</span>
+                    <button type="button" onclick="removeStaffRow(this)" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
+                </td>
+            `;
+            container.appendChild(tr);
+            checkStaffCountLimit();
+        }
+
+        function removeStaffRow(btn) {
+            const container = document.getElementById('wages-rows-container');
+            if(container.querySelectorAll('.wage-row').length <= 1) {
+                alert('至少需保留 1 位兼職欄位！');
+                return;
+            }
+            btn.closest('.wage-row').remove();
+            checkStaffCountLimit();
+        }
+
+        function checkStaffCountLimit() {
+            const rows = document.querySelectorAll('.wage-row');
+            const btn = document.getElementById('add-staff-btn');
+            if(btn) {
+                if(rows.length >= 5) {
+                    btn.classList.add('opacity-50', 'cursor-not-allowed');
+                    btn.disabled = true;
+                } else {
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    btn.disabled = false;
+                }
+            }
+        }
+
+        function saveWagesData() {
+            const monthKey = document.getElementById('expense-month-picker').value;
+            const staffList = [];
+            document.querySelectorAll('.wage-row').forEach(row => {
+                staffList.push({
+                    name: row.querySelector('.wage-name').value.trim(),
+                    rate: parseFloat(row.querySelector('.wage-rate').value) || 0,
+                    days: parseFloat(row.querySelector('.wage-days').value) || 0,
+                    advance: Math.abs(parseFloat(row.querySelector('.wage-advance').value) || 0)
+                });
+            });
+            db.collection('expenses_wages').doc(monthKey).set({ staff: staffList }).then(() => alert('兼職薪資已儲存！'));
+        }
+
+        function showAddItemModal() {
+            const name = prompt("材料名稱:");
+            if(!name) return;
+            const qty = parseInt(prompt("數量:", "1")) || 1;
+            const price = parseFloat(prompt("總金額 (MYR):", "0")) || 0;
+            const inv = prompt("關聯單號 (可留空):", "");
+            db.collection('expenses_items').add({ date: new Date().toISOString().split('T')[0], invoiceNo: inv, name, qty, totalPrice: price });
+        }
+
+        function populateCompanySettingsForm() {
+            if(document.getElementById('set-company-name')) {
+                document.getElementById('set-company-name').value = companyConfig.name || '';
+                document.getElementById('set-company-phone').value = companyConfig.phone || '';
+                document.getElementById('set-company-phone2').value = companyConfig.phone2 || '';
+                document.getElementById('set-company-address').value = companyConfig.address || '';
+                document.getElementById('set-payment-details').value = companyConfig.paymentDetails || '';
+            }
+        }
+
+        function handleSaveCompanySettings(e) {
+            e.preventDefault();
+            companyConfig = {
+                name: document.getElementById('set-company-name').value.trim(),
+                phone: document.getElementById('set-company-phone').value.trim(),
+                phone2: document.getElementById('set-company-phone2').value.trim(),
+                address: document.getElementById('set-company-address').value.trim(),
+                paymentDetails: document.getElementById('set-payment-details').value.trim()
+            };
+            db.collection('settings').doc('company').set(companyConfig).then(() => alert('公司與發票設定已儲存！'));
+        }
+
+        function downloadCSV(csv, filename) {
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+        }
+
+        function exportDocumentsExcel() {
+            let csv = "\uFEFF單號,類型,客戶,電話,地區,日期,金額\n";
+            documentsStore.forEach(d => { csv += `"${d.id}","${d.type}","${d.customer.name}","${d.customer.phone}","${d.customer.location}","${d.date}",${d.totalAmount.toFixed(2)}\n`; });
+            downloadCSV(csv, `Documents_${new Date().toISOString().split('T')[0]}.csv`);
+        }
+    </script>
+</body>
+</html>
